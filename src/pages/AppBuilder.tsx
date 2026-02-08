@@ -6,6 +6,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { toast } from "sonner";
 import {
   ArrowLeft, Send, Sparkles, Download, ExternalLink, RotateCcw, Copy,
+  ChevronUp, ChevronDown, Terminal,
 } from "lucide-react";
 
 type Msg = { role: "user" | "assistant"; content: string };
@@ -25,8 +26,11 @@ export default function AppBuilder() {
   const [isLoading, setIsLoading] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [streamText, setStreamText] = useState("");
+  const [buildLogs, setBuildLogs] = useState<string[]>([]);
+  const [logsOpen, setLogsOpen] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  const logRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!user) navigate("/");
@@ -36,11 +40,14 @@ export default function AppBuilder() {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [messages, streamText]);
 
-  // Extract HTML from streaming text in real-time
   useEffect(() => {
     const html = extractHtml(streamText);
     if (html) setPreviewHtml(html);
   }, [streamText]);
+
+  useEffect(() => {
+    logRef.current?.scrollTo({ top: logRef.current.scrollHeight, behavior: "smooth" });
+  }, [buildLogs]);
 
   const send = useCallback(async () => {
     const text = input.trim();
@@ -51,6 +58,8 @@ export default function AppBuilder() {
     setMessages((prev) => [...prev, userMsg]);
     setIsLoading(true);
     setStreamText("");
+    setBuildLogs(["[BUILD] Starting app generation...", `[BUILD] Prompt: "${text.slice(0, 80)}..."`]);
+    setLogsOpen(true);
 
     try {
       const resp = await fetch(BUILD_URL, {
@@ -93,6 +102,14 @@ export default function AppBuilder() {
             if (c) {
               fullText += c;
               setStreamText(fullText);
+              setBuildLogs(prev => {
+                const logs = [...prev];
+                if (!logs.some(l => l.includes("Receiving"))) logs.push("[BUILD] Receiving AI response...");
+                if (fullText.includes("<html") && !logs.some(l => l.includes("HTML structure"))) logs.push("[BUILD] Generating HTML structure...");
+                if ((fullText.includes("<style") || fullText.includes("css")) && !logs.some(l => l.includes("Styling"))) logs.push("[BUILD] Styling components...");
+                if ((fullText.includes("<script") || fullText.includes("function")) && !logs.some(l => l.includes("JavaScript"))) logs.push("[BUILD] Adding JavaScript logic...");
+                return logs.length > prev.length ? logs : prev;
+              });
             }
           } catch {
             buffer = line + "\n" + buffer;
@@ -111,7 +128,7 @@ export default function AppBuilder() {
             const p = JSON.parse(json);
             const c = p.choices?.[0]?.delta?.content;
             if (c) { fullText += c; setStreamText(fullText); }
-          } catch {}
+          } catch { }
         }
       }
 
@@ -120,14 +137,22 @@ export default function AppBuilder() {
       setStreamText("");
 
       const html = extractHtml(fullText);
-      if (html) setPreviewHtml(html);
+      if (html) {
+        setPreviewHtml(html);
+        setBuildLogs(p => [...p, "[BUILD] ✅ App generated successfully!", `[BUILD] Total size: ${(html.length / 1024).toFixed(1)} KB`]);
+      }
 
     } catch (e: any) {
       toast.error(e.message || "Something went wrong");
+      setBuildLogs(p => [...p, `[ERROR] ${e.message || "Build failed"}`]);
     } finally {
       setIsLoading(false);
     }
   }, [input, isLoading, messages]);
+
+  const logged = (key: string) => buildLogs.find(l => l.includes(`[BUILD] ${key}`));
+  const addLog = (log: string) => setBuildLogs(p => [...p, log]);
+  const len = (str: string) => new Blob([str]).size;
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
@@ -246,7 +271,7 @@ export default function AppBuilder() {
         </div>
       </div>
 
-      {/* Right: Preview */}
+      {/* Right: Preview + Logs */}
       <div className="hidden md:flex flex-1 flex-col min-w-0">
         {/* Preview toolbar */}
         <div className="flex items-center justify-between px-4 py-2 border-b border-border shrink-0">
@@ -262,7 +287,7 @@ export default function AppBuilder() {
               <Button variant="ghost" size="sm" onClick={openInNewTab} className="text-xs gap-1 text-muted-foreground">
                 <ExternalLink className="w-3.5 h-3.5" /> Open
               </Button>
-              <Button variant="ghost" size="sm" onClick={() => { setPreviewHtml(null); setMessages([]); }} className="text-xs gap-1 text-muted-foreground">
+              <Button variant="ghost" size="sm" onClick={() => { setPreviewHtml(null); setMessages([]); setBuildLogs([]); }} className="text-xs gap-1 text-muted-foreground">
                 <RotateCcw className="w-3.5 h-3.5" /> Reset
               </Button>
             </div>
@@ -270,7 +295,7 @@ export default function AppBuilder() {
         </div>
 
         {/* iframe */}
-        <div className="flex-1 relative bg-background">
+        <div className="flex-1 relative bg-background min-h-0">
           {previewHtml ? (
             <iframe
               ref={iframeRef}
@@ -290,6 +315,38 @@ export default function AppBuilder() {
             </div>
           )}
         </div>
+
+        {/* Build Logs Panel */}
+        {buildLogs.length > 0 && (
+          <div className="border-t border-border shrink-0">
+            <button
+              onClick={() => setLogsOpen(!logsOpen)}
+              className="w-full flex items-center justify-between px-4 py-2 text-xs font-medium text-muted-foreground hover:text-foreground transition-colors bg-card"
+            >
+              <span className="flex items-center gap-2">
+                <Terminal className="w-3.5 h-3.5" />
+                Build Logs
+                {isLoading && <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />}
+              </span>
+              {logsOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
+            </button>
+            {logsOpen && (
+              <div
+                ref={logRef}
+                className="max-h-40 overflow-y-auto bg-background px-4 py-2 space-y-0.5 font-mono text-xs"
+              >
+                {buildLogs.map((log, i) => (
+                  <div
+                    key={i}
+                    className={`${log.startsWith("[ERROR]") ? "text-destructive" : log.includes("✅") ? "text-green-400" : "text-muted-foreground"}`}
+                  >
+                    {log}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
