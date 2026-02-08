@@ -41,6 +41,39 @@ export type Database = {
         }
         Relationships: []
       }
+      generated_apps: {
+        Row: {
+          created_at: string
+          html_content: string
+          id: string
+          is_published: boolean
+          slug: string
+          title: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          html_content: string
+          id?: string
+          is_published?: boolean
+          slug: string
+          title?: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          html_content?: string
+          id?: string
+          is_published?: boolean
+          slug?: string
+          title?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       messages: {
         Row: {
           content: string
