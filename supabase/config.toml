@@ -5,3 +5,6 @@ verify_jwt = false
 
 [functions.build-app]
 verify_jwt = false
+
+[functions.serve-app]
+verify_jwt = false
